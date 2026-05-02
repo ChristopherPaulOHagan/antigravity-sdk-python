@@ -36,4 +36,13 @@ pip install -e ".[dev]"
 echo "--- Running tests ---"
 python -m pytest -v --tb=short
 
+echo "--- Building wheel ---"
+pip install build
+python -m build --wheel --outdir dist/
+
+echo "--- Verifying wheel installs and imports correctly ---"
+pip install --force-reinstall --no-deps dist/*.whl
+python -c "from google.antigravity.agent import Agent; print('Import OK: Agent')"
+python -c "from google.antigravity.connections.local_connection import LocalConnection; print('Import OK: LocalConnection')"
+
 echo "--- Presubmit passed ---"
