@@ -27,6 +27,10 @@
 #
 # Environment variables:
 #   VERSION         - SDK version (default: auto-read from pyproject.toml).
+#   PUBLISH         - If set to "true", uploads a manifest to the OSS Exit
+#                     Gate GCS bucket after the wheel upload, triggering
+#                     promotion to public PyPI.  Without this, wheels are
+#                     staged in Artifact Registry but NOT made public.
 #
 # Usage (local, after Copybara export):
 #   # Place binary(ies) under .kokoro/binaries/<platform>/localharness,
@@ -72,6 +76,35 @@ if [[ -z "${VERSION}" ]]; then
 fi
 
 echo "=== Google Antigravity SDK Release v${VERSION} ==="
+
+# ---------------------------------------------------------------------------
+# PUBLISH flag — controls whether the release is promoted to public PyPI.
+# ---------------------------------------------------------------------------
+#
+# ██████████████████████████████████████████████████████████████████████████
+# █                                                                      █
+# █  WARNING: DO NOT SET PUBLISH=true BEFORE MAY 19, 2026.               █
+# █                                                                      █
+# █  Setting PUBLISH=true uploads a manifest to the OSS Exit Gate,       █
+# █  which IMMEDIATELY and IRREVERSIBLY publishes the wheel to public    █
+# █  PyPI (pypi.org).  There is no undo.                                 █
+# █                                                                      █
+# █  This flag must ONLY be used:                                        █
+# █    1. On or after May 19, 2026 (Google I/O launch date).             █
+# █    2. With explicit human approval from a member of                  █
+# █       agy-sdk-code-owners.                                           █
+# █                                                                      █
+# █  After the initial public release, this flag should be REMOVED       █
+# █  so that publishing becomes the default behavior for all releases.   █
+# █                                                                      █
+# ██████████████████████████████████████████████████████████████████████████
+#
+PUBLISH="${PUBLISH:-}"
+if [[ "${PUBLISH}" == "true" ]]; then
+  echo "*** PUBLISH=true — wheels will be promoted to public PyPI after upload. ***"
+else
+  echo "--- PUBLISH is not set — wheels will be staged in Artifact Registry only. ---"
+fi
 
 # Install build/release tools with hash verification.
 # See go/pip-install-remediation.
@@ -186,4 +219,36 @@ twine upload \
   --verbose \
   "${DIST_DIR}"/*
 
-echo "--- Release v${VERSION} complete ---"
+# ---------------------------------------------------------------------------
+# Manifest upload — triggers promotion from AR staging to public PyPI.
+# ---------------------------------------------------------------------------
+#
+# The OSS Exit Gate uses a GCS manifest as the "publish now" signal.
+# Uploading this file triggers the Exit Gate to verify and publish all
+# staged artifacts to pypi.org.  See go/oss-exit-gate-release-python.
+#
+# The manifest is a simple JSON file: { "publish_all": true }
+# It is uploaded to:
+#   gs://oss-exit-gate-prod-projects-bucket/google-antigravity/pypi/manifests/
+#
+EG_GCS_BUCKET="gs://oss-exit-gate-prod-projects-bucket/google-antigravity/pypi/manifests"
+
+if [[ "${PUBLISH}" == "true" ]]; then
+  echo ""
+  echo "--- Publishing to PyPI: uploading manifest to OSS Exit Gate ---"
+  MANIFEST_FILE="manifest.json"
+  echo '{ "publish_all": true }' > "${MANIFEST_FILE}"
+  MANIFEST_NAME="manifest-v${VERSION}-$(date -u +%Y%m%d-%H%M%S).json"
+  gcloud storage cp "${MANIFEST_FILE}" "${EG_GCS_BUCKET}/${MANIFEST_NAME}"
+  rm -f "${MANIFEST_FILE}"
+  echo "  Manifest uploaded: ${EG_GCS_BUCKET}/${MANIFEST_NAME}"
+  echo "  The OSS Exit Gate will now verify and publish to pypi.org."
+  echo "  Monitor progress at: http://go/spng2?q=PROJECT%3Agoogle-antigravity%2Fpypi"
+  echo ""
+  echo "--- Release v${VERSION} published ---"
+else
+  echo ""
+  echo "--- Release v${VERSION} staged (NOT published to PyPI) ---"
+  echo "  Wheels are in Artifact Registry: ${REPO_URL}"
+  echo "  To publish, re-run with PUBLISH=true or use trigger_release.sh --publish."
+fi
