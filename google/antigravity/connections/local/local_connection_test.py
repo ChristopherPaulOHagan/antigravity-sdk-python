@@ -1976,15 +1976,17 @@ class LocalConnectionStrategyApiKeyTest(unittest.IsolatedAsyncioTestCase):
         pass
 
 
+_get_default_binary_path = local_connection._get_default_binary_path
+
+
 class GetDefaultBinaryPathTest(unittest.TestCase):
 
   @mock.patch.dict("os.environ", {"ANTIGRAVITY_HARNESS_PATH": "/env/path"})
   def test_returns_env_path(self):
-    path = local_connection._get_default_binary_path()
+    path = _get_default_binary_path()
     self.assertEqual(path, "/env/path")
 
   @mock.patch.dict("os.environ", {}, clear=True)
-  @mock.patch.object(local_connection, "resources", None)
   @mock.patch("importlib.metadata.distribution")
   @mock.patch("os.path.exists")
   def test_returns_metadata_distribution_path(self, mock_exists, mock_dist):
@@ -1999,7 +2001,7 @@ class GetDefaultBinaryPathTest(unittest.TestCase):
     mock_dist.return_value = mock_distribution
     mock_exists.return_value = True
 
-    path = local_connection._get_default_binary_path()
+    path = _get_default_binary_path()
     self.assertEqual(path, "/site-packages/google/antigravity/bin/localharness")
     mock_dist.assert_called_once_with("google-antigravity")
     mock_file.locate.assert_called_once()
@@ -2034,11 +2036,10 @@ class GetDefaultBinaryPathTest(unittest.TestCase):
     mock_files.return_value = mock_path
     mock_exists.return_value = True
 
-    path = local_connection._get_default_binary_path()
+    path = _get_default_binary_path()
     self.assertEqual(path, "/wheel/path")
 
   @mock.patch.dict("os.environ", {}, clear=True)
-  @mock.patch.object(local_connection, "resources", None)
   @mock.patch("importlib.metadata.distribution")
   @mock.patch("importlib.resources.files")
   @mock.patch("shutil.which")
@@ -2047,12 +2048,11 @@ class GetDefaultBinaryPathTest(unittest.TestCase):
     mock_files.side_effect = ImportError
     mock_which.return_value = "/system/path"
 
-    path = local_connection._get_default_binary_path()
+    path = _get_default_binary_path()
     self.assertEqual(path, "/system/path")
     mock_which.assert_called_once_with("localharness")
 
   @mock.patch.dict("os.environ", {}, clear=True)
-  @mock.patch.object(local_connection, "resources", None)
   @mock.patch("importlib.metadata.distribution")
   @mock.patch("importlib.resources.files")
   @mock.patch("shutil.which")
@@ -2062,7 +2062,7 @@ class GetDefaultBinaryPathTest(unittest.TestCase):
     mock_which.return_value = None
 
     with self.assertRaises(RuntimeError) as ctx:
-      local_connection._get_default_binary_path()
+      _get_default_binary_path()
     self.assertIn(
         "Could not find default localharness binary", str(ctx.exception)
     )

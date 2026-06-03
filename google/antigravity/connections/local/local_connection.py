@@ -47,8 +47,6 @@ from google.antigravity.hooks import hooks
 from google.antigravity.tools import tool_runner as t_runner
 
 
-resources = None
-
 _ANY_ADAPTER = pydantic.TypeAdapter(Any)
 
 
@@ -1362,11 +1360,11 @@ def _get_sdk_version() -> str:
     return "0.0.0-dev"
 
 
-def _get_default_binary_path() -> str:
-  """Finds the default binary path, supporting both internal and external wheels."""
+def _get_default_binary_path_external() -> str:
+  """Returns the default localharness binary path."""
   # 1. Check environment variable first
-  if env_path := os.environ.get("ANTIGRAVITY_HARNESS_PATH"):
-    return env_path
+  if harness_path := os.environ.get("ANTIGRAVITY_HARNESS_PATH"):
+    return harness_path
 
   # 2. Try importlib.metadata (Robust wheel discovery)
   # This is immune to sys.path shadowing by a local repository directory.
@@ -1417,6 +1415,9 @@ def _get_default_binary_path() -> str:
       "local source tree might shadow your pip-installed package and prevent "
       "resource discovery."
   )
+
+
+_get_default_binary_path = _get_default_binary_path_external
 
 
 class LocalConnectionStrategy(connection.ConnectionStrategy):
