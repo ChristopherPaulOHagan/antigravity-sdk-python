@@ -191,6 +191,8 @@ if [[ -z "${PUBLISH_PREBUILT_VERSION:-}" ]]; then
     # discovers it via package-data.
     touch "${BIN_DEST}/__init__.py"
 
+    # Clean setuptools build directory to prevent binary accumulation across platforms.
+    rm -rf build/
     # Build the wheel, then re-tag with the correct platform.
     # --no-isolation: use the setuptools/wheel already installed via
     # requirements-release.txt rather than creating a fresh venv that
