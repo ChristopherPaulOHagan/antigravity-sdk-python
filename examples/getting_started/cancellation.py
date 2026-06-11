@@ -28,8 +28,9 @@ To run:
 
 import asyncio
 
+from google.antigravity import Agent
+from google.antigravity import LocalAgentConfig
 from google.antigravity import types
-from google.antigravity import Agent, LocalAgentConfig
 
 
 async def render_chat(response: types.ChatResponse) -> None:
