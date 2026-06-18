@@ -367,7 +367,7 @@ class AntigravityValidationErrorTest(unittest.TestCase):
   def test_from_pydantic(self):
     """Verifies construction from a real Pydantic ValidationError.
 
-    What: Checks the from_pydantic factory method.
+    What: Checks the _from_pydantic factory method.
     Why: This is the primary construction path at SDK boundaries.
     How: Triggers a ValidationError and wraps it.
     """
@@ -378,7 +378,7 @@ class AntigravityValidationErrorTest(unittest.TestCase):
       err = e
 
     self.assertIsNotNone(err, "Expected ValidationError was not raised.")
-    wrapped = types.AntigravityValidationError.from_pydantic(err)
+    wrapped = types.AntigravityValidationError._from_pydantic(err)
     self.assertIn("name", wrapped.message)
     self.assertGreater(len(wrapped.errors), 0)
 

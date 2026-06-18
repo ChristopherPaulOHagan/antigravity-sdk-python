@@ -717,7 +717,7 @@ class AntigravityValidationError(Exception):
     self.errors = errors or []
 
   @classmethod
-  def from_pydantic(
+  def _from_pydantic(
       cls, exc: pydantic.ValidationError
   ) -> "AntigravityValidationError":
     """Constructs from a Pydantic ValidationError.
