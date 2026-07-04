@@ -19,9 +19,9 @@ Re-exports the public API so that existing import paths like
 continue to work without changes.
 """
 
+from google.antigravity.connections.local.event_processor import LocalConnectionStep
 from google.antigravity.connections.local.local_connection import callable_to_tool_proto
 from google.antigravity.connections.local.local_connection import LocalConnection
-from google.antigravity.connections.local.local_connection import LocalConnectionStep
 from google.antigravity.connections.local.local_connection import LocalConnectionStrategy
 from google.antigravity.connections.local.local_connection_config import LocalAgentConfig
 from google.antigravity.connections.local.types import EditFileResult

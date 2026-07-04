@@ -19,10 +19,8 @@ import base64
 import datetime
 import importlib
 import io
-import json
 import os
 import pathlib
-import struct
 import subprocess
 import tempfile
 import unittest
@@ -33,7 +31,9 @@ from absl.testing import parameterized
 import pydantic
 import websockets
 
+from google.antigravity.connections.local import localharness_pb2
 from google.antigravity import types
+from google.antigravity.connections.local import event_processor
 from google.antigravity.connections.local import local_connection
 from google.antigravity.connections.local import local_connection_config
 from google.antigravity.connections.local import localharness_pb2
@@ -516,24 +516,24 @@ class LocalConnectionTest(unittest.IsolatedAsyncioTestCase):
     img = types.Image(data=b"\xff\xd8\xff\xd9", mime_type="image/jpeg")
 
     # A bare media value is fully extracted.
-    cleaned, media = local_connection._extract_media_from_result(img)
+    cleaned, media = event_processor._extract_media_from_result(img)
     self.assertIsNone(cleaned)
     self.assertEqual(media, [img])
 
     # Media is pulled out of a mixed list, text is kept.
-    cleaned, media = local_connection._extract_media_from_result(
+    cleaned, media = event_processor._extract_media_from_result(
         ["a", img, "b"]
     )
     self.assertEqual(cleaned, ["a", "b"])
     self.assertEqual(media, [img])
 
     # Non-media values pass through untouched.
-    cleaned, media = local_connection._extract_media_from_result({"k": "v"})
+    cleaned, media = event_processor._extract_media_from_result({"k": "v"})
     self.assertEqual(cleaned, {"k": "v"})
     self.assertEqual(media, [])
 
     # Media nested in a dict is extracted; remaining keys are kept.
-    cleaned, media = local_connection._extract_media_from_result(
+    cleaned, media = event_processor._extract_media_from_result(
         {"caption": "hi", "img": img}
     )
     self.assertEqual(cleaned, {"caption": "hi"})
@@ -953,188 +953,6 @@ class LocalConnectionTest(unittest.IsolatedAsyncioTestCase):
         )
     )
     await asyncio.wait_for(consumer_task, timeout=1.0)
-
-
-class LocalConnectionStepFromDictTest(unittest.TestCase):
-  """Tests for LocalConnectionStep.from_dict derivation logic.
-
-  Specifically targets the is_complete_response calculation and edge cases in
-  step type detection.
-  """
-
-  def test_is_complete_response_true(self):
-    """Verifies is_complete_response is True when source=MODEL, state=DONE, target=TARGET_USER, and text is present.
-
-    Why: This is the canonical "agent finished speaking" signal that callers
-    rely on to surface the final answer. All four conditions must hold:
-    source is MODEL, status is DONE, text is present, and target is USER.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_DONE",
-        "text": "Here is my answer.",
-        "target": "TARGET_USER",
-    })
-    self.assertTrue(step.is_complete_response)
-
-  def test_is_complete_response_false_when_source_not_model(self):
-    """Verifies is_complete_response is False when source is not MODEL.
-
-    Why: System or user steps that are done and have text should not be
-    treated as a completed model response.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_USER",
-        "state": "STATE_DONE",
-        "text": "Some user text.",
-    })
-    self.assertFalse(step.is_complete_response)
-
-  def test_is_complete_response_false_when_not_done(self):
-    """Verifies is_complete_response is False when state is not DONE.
-
-    Why: An active model step is still streaming; it should not be treated
-    as complete until the harness marks it done.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_ACTIVE",
-        "text": "Partial response...",
-    })
-    self.assertFalse(step.is_complete_response)
-
-  def test_is_complete_response_false_when_no_text(self):
-    """Verifies is_complete_response is False when text is empty.
-
-    Why: A done model step with no text is a structural step (e.g. tool use
-    completion), not a completed textual response.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_DONE",
-    })
-    self.assertFalse(step.is_complete_response)
-
-  def test_is_complete_response_false_when_error_state(self):
-    """Verifies is_complete_response is False when state is ERROR."""
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_ERROR",
-        "text": "Something went wrong",
-        "error_message": "internal error",
-    })
-    self.assertFalse(step.is_complete_response)
-
-  def test_is_complete_response_false_when_target_environment(self):
-    """Verifies is_complete_response is False for TARGET_ENVIRONMENT steps.
-
-    Why: Tool execution steps (view_file, run_command, etc.) are targeted at
-    the environment, not the user. Even when they are source=MODEL, state=DONE,
-    and have text (e.g. "Requesting permission to make tool call"), they must
-    not be treated as a completed model response.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_DONE",
-        "text": "Requesting permission to make tool call",
-        "target": "TARGET_ENVIRONMENT",
-    })
-    self.assertFalse(step.is_complete_response)
-
-  def test_step_type_tool_call_with_builtin(self):
-    """Verifies that a step with a builtin tool proto field is typed TOOL_CALL and parses details."""
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_ACTIVE",
-        "view_file": {"file_path": "/foo"},
-    })
-    self.assertEqual(step.type, types.StepType.TOOL_CALL)
-
-    self.assertEqual(len(step.tool_calls), 1)
-    self.assertEqual(step.tool_calls[0].name, "view_file")
-    self.assertEqual(step.tool_calls[0].args, {"file_path": "/foo"})
-    self.assertEqual(step.tool_calls[0].canonical_path, "/foo")
-
-  def test_structured_output_extracted_from_finish(self):
-    """Verifies that structured output is extracted when finish payload is present.
-
-    Why: The connection layer is responsible for extracting and parsing
-    the final structured output from the wire format so Layer 2 and E2E tests
-    can access it natively.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_DONE",
-        "finish": {
-            "output_string": (
-                '{"total_revenue": 386.0, "top_selling_product": "Widget A"}'
-            ),
-        },
-    })
-    self.assertEqual(
-        step.structured_output,
-        {"total_revenue": 386.0, "top_selling_product": "Widget A"},
-    )
-
-  def test_structured_output_extracted_from_finish_handles_invalid_json(self):
-    """Verifies that invalid JSON in finish payload defaults to None.
-
-    Why: The connection layer should handle malformed JSON payloads gracefully
-    by returning None instead of raising a fatal exception.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "source": "SOURCE_MODEL",
-        "state": "STATE_DONE",
-        "finish": {
-            "output_string": (  # Invalid JSON
-                '{"total_revenue": 386.0, "top_selling_product": }'
-            ),
-        },
-    })
-    self.assertIsNone(step.structured_output)
-
-  def test_step_from_dict_normalizes_file_uri_arguments(self):
-    """Verifies that LocalConnectionStep.from_dict normalizes file:// URIs."""
-    step = local_connection.LocalConnectionStep.from_dict({
-        "step_index": 1,
-        "trajectory_id": "traj_1",
-        "state": "STATE_WAITING_FOR_USER",
-        "view_file": {"file_path": "file:///dev/shm/workspace/foo.py"},
-    })
-    self.assertEqual(len(step.tool_calls), 1)
-    self.assertEqual(
-        step.tool_calls[0].args.get("file_path"), "/dev/shm/workspace/foo.py"
-    )
-    self.assertNotIn("canonical_path", step.tool_calls[0].args)
-    self.assertEqual(
-        step.tool_calls[0].canonical_path,
-        "/dev/shm/workspace/foo.py",
-    )
-
-  def test_step_from_dict_normalizes_cns_uri_arguments(self):
-    """Verifies that LocalConnectionStep.from_dict normalizes cns:// URIs.
-
-    Why: The CNS-backed filesystem uses cns:// URIs as path representations.
-    The workspace_only policy compares canonical_path against /cns/... paths
-    provided by the user, so cns:// must be translated to /cns/... for
-    policy matching to work correctly.
-    """
-    step = local_connection.LocalConnectionStep.from_dict({
-        "step_index": 1,
-        "trajectory_id": "traj_1",
-        "state": "STATE_WAITING_FOR_USER",
-        "create_file": {"path": "cns://el-d/home/user/workspace/kittens.md"},
-    })
-    self.assertEqual(len(step.tool_calls), 1)
-    self.assertEqual(
-        step.tool_calls[0].args.get("path"),
-        "/cns/el-d/home/user/workspace/kittens.md",
-    )
-    self.assertNotIn("canonical_path", step.tool_calls[0].args)
-    self.assertEqual(
-        step.tool_calls[0].canonical_path,
-        "/cns/el-d/home/user/workspace/kittens.md",
-    )
 
 
 class LocalConnectionToolCallNoRunnerTest(unittest.IsolatedAsyncioTestCase):
@@ -1651,9 +1469,7 @@ class LocalConnectionStrategyConfigTest(parameterized.TestCase):
         ]
     )
     config = strategy._build_harness_config()
-    self.assertFalse(
-        config.models[0].gemini_api_endpoint.HasField("options")
-    )
+    self.assertFalse(config.models[0].gemini_api_endpoint.HasField("options"))
 
   def test_models_thinking_level_all_values(self):
     """Verifies all ThinkingLevel enum values produce correct proto strings."""
@@ -3316,7 +3132,7 @@ class LocalConnectionSendTest(unittest.IsolatedAsyncioTestCase):
 
     # Clean up: signal idle so the first receiver can exit.
     harness.conn._is_idle.set()
-    await harness.conn._step_queue.put(local_connection._IDLE_SENTINEL)
+    await harness.conn._step_queue.put(local_connection.IDLE_SENTINEL)
     task.cancel()
     try:
       await task
@@ -3441,7 +3257,6 @@ class LocalAgentConfigTest(absltest.TestCase):
         app_data_dir="/tmp/app",
         response_schema="{}",
         skills_paths=["/tmp/skills"],
-
         model="gemini-2.5-pro",
         api_key="fake_api_key",
         vertex=True,

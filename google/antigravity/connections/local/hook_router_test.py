@@ -19,9 +19,9 @@ from typing import Any
 from absl.testing import absltest
 from google.antigravity.connections.local import localharness_pb2
 from google.antigravity import types
+from google.antigravity.connections.local import event_processor
 from google.antigravity.connections.local import types as local_types
 from google.antigravity.connections.local.hook_router import HookRouter
-from google.antigravity.connections.local.local_connection import _extract_tool_result
 from google.antigravity.hooks import hook_runner as h_runner
 from google.antigravity.hooks import hooks
 
@@ -388,7 +388,7 @@ class HookRouterStructuredExtractionTest(absltest.TestCase):
       router = HookRouter(
           hook_runner,
           lambda event: asyncio.sleep(0),
-          result_extractor=_extract_tool_result,
+          result_extractor=event_processor._extract_tool_result,
       )
       req = localharness_pb2.CallHookRequest(
           request_id="test_struct",
