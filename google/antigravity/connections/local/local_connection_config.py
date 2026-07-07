@@ -84,19 +84,8 @@ def normalize_wire_path(path: str) -> str:
   return path
 
 
-class LocalAgentConfig(connection.AgentConfig):
-  """Configuration for the local harness backend.
-
-  This is the default config for the Agent class. It uses the
-  Go-based localharness binary.
-
-  By default, all tools are enabled but ``run_command`` is denied via
-  ``policy.confirm_run_command()``.  To enable fully autonomous execution
-  (including shell access), pass ``policies=[policy.allow_all()]``.
-
-  When ``workspaces`` are configured, file tools are automatically
-  restricted to those directories via ``policy.workspace_only()``.
-  """
+class BaseLocalAgentConfig(connection.AgentConfig):
+  """Base configuration class for local harness agent configurations."""
 
   model_config = pydantic.ConfigDict(
       arbitrary_types_allowed=True, validate_assignment=True
@@ -110,6 +99,58 @@ class LocalAgentConfig(connection.AgentConfig):
   )
   workspaces: list[str] = pydantic.Field(default_factory=lambda: [os.getcwd()])
 
+  @pydantic.field_validator("app_data_dir")
+  def _validate_app_data_dir(cls, v: str | None) -> str | None:  # pylint: disable=no-self-argument
+    if v is not None and not os.path.isabs(v):
+      raise ValueError(f"app_data_dir must be an absolute path, got '{v}'")
+    return v
+
+  @pydantic.model_validator(mode="after")
+  def _apply_workspace_policies(self) -> "BaseLocalAgentConfig":
+    """Prepends workspace-scoping policies when workspaces are configured."""
+    if self.workspaces:
+      app_data_path = self.app_data_dir or DEFAULT_APP_DATA_DIR
+      resolved_app_data_dir = pathlib.Path(app_data_path).expanduser().resolve()
+      allowed_paths = [*self.workspaces, str(resolved_app_data_dir)]
+
+      self.__dict__["policies"] = (
+          policy.workspace_only(allowed_paths) + self.policies
+      )
+    return self
+
+  def _get_system_instructions(self) -> types.SystemInstructions | None:
+    """Returns the system instructions, normalizing shorthand if needed."""
+    if isinstance(self.system_instructions, str):
+      return types.TemplatedSystemInstructions(
+          sections=[
+              types.SystemInstructionSection(content=self.system_instructions)
+          ]
+      )
+    return self.system_instructions
+
+  def _get_or_create_save_dir(self) -> str:
+    """Returns save_dir, generating a temporary one if not specified."""
+    save_dir = self.save_dir
+    if save_dir is None:
+      save_dir = tempfile.mkdtemp(prefix="antigravity_")
+      logging.info("No save_dir specified; using %s", save_dir)
+    return save_dir
+
+
+class LocalAgentConfig(BaseLocalAgentConfig):
+  """Configuration for the local harness backend.
+
+  This is the default config for the Agent class. It uses the
+  Go-based localharness binary.
+
+  By default, all tools are enabled but ``run_command`` is denied via
+  ``policy.confirm_run_command()``.  To enable fully autonomous execution
+  (including shell access), pass ``policies=[policy.allow_all()]``.
+
+  When ``workspaces`` are configured, file tools are automatically
+  restricted to those directories via ``policy.workspace_only()``.
+  """
+
   # Top-level shorthand fields — flow into models.
   model: str | types.ModelTarget | None = None
   models: list[types.ModelTarget] | None = None
@@ -118,7 +159,7 @@ class LocalAgentConfig(connection.AgentConfig):
   project: str | None = None
   location: str | None = None
 
-  def __init__(
+  def __init__(  # pylint: disable=super-init-not-called
       self,
       *,
       system_instructions: str | types.SystemInstructions | None = None,
