@@ -263,6 +263,35 @@ class LocalConnectionStepFromDictTest(absltest.TestCase):
         "/cns/el-d/home/user/workspace/kittens.md",
     )
 
+  def test_step_type_tool_call_with_custom_tool(self):
+    """Verifies that a step with a custom_tool field is typed TOOL_CALL and parses details."""
+    step = event_processor.LocalConnectionStep.from_dict({
+        "source": "SOURCE_MODEL",
+        "state": "STATE_DONE",
+        "custom_tool": {
+            "tool_call": {
+                "id": "call_1",
+                "name": "my_custom_tool",
+                "arguments_json": (
+                    '{"arg1": "val1", "file_path": "file:///foo"}'
+                ),
+            },
+            "tool_response": {
+                "id": "my_custom_tool",
+                "response_json": '{"result": "ok"}',
+            },
+        },
+    })
+    self.assertEqual(step.type, types.StepType.TOOL_CALL)
+
+    self.assertLen(step.tool_calls, 1)
+    self.assertEqual(step.tool_calls[0].name, "my_custom_tool")
+    self.assertEqual(
+        step.tool_calls[0].args,
+        {"arg1": "val1", "file_path": "/foo"},
+    )
+    self.assertEqual(step.tool_calls[0].canonical_path, "/foo")
+
 
 class LocalHarnessEventProcessorTest(unittest.IsolatedAsyncioTestCase):
   """Tests for LocalHarnessEventProcessor."""

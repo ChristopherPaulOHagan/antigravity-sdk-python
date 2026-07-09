@@ -238,6 +238,18 @@ class LocalConnectionStep(types.Step):
         arguments_json = mcp_dict.get("arguments_json") or "{}"
         active_tool_args = json.loads(arguments_json)
 
+    if not active_tool_name and "custom_tool" in step_dict:
+      ct_dict = step_dict["custom_tool"]
+      if isinstance(ct_dict, dict) and "tool_call" in ct_dict:
+        tc_dict = ct_dict["tool_call"]
+        if isinstance(tc_dict, dict):
+          active_tool_name = tc_dict.get("name", "")
+          arguments_json = tc_dict.get("arguments_json") or "{}"
+          try:
+            active_tool_args = json.loads(arguments_json)
+          except json.JSONDecodeError:
+            active_tool_args = {}
+
     if active_tool_name:
       canonical_path = None
       # Sanitize all known file path argument fields in-place
