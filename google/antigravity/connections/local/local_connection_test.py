@@ -1840,6 +1840,89 @@ class LocalConnectionStrategyApiKeyTest(unittest.IsolatedAsyncioTestCase):
       async with strategy:
         pass
 
+  @mock.patch.dict(
+      "os.environ",
+      {"GEMINI_API_KEY": "env-key", "SYS_VAR": "sys_val"},
+      clear=True,
+  )
+  @mock.patch("subprocess.Popen")
+  async def test_passes_custom_env_to_popen_and_input_config(self, mock_popen):
+    """Verifies custom env dict is merged into Popen env and InputConfig."""
+    mock_proc = mock.MagicMock()
+    mock_proc.stdin = mock.MagicMock()
+    mock_proc.stdout = mock.MagicMock()
+    mock_proc.stderr = mock.MagicMock()
+    mock_proc.stdout.read.return_value = b""
+    mock_popen.return_value = mock_proc
+
+    custom_env = {"MY_CUSTOM_VAR": "hello_env"}
+    strategy = self._make_strategy(env=custom_env)
+
+    with self.assertRaises(RuntimeError):
+      async with strategy:
+        pass
+
+    mock_popen.assert_called_once()
+    _, kwargs = mock_popen.call_args
+    expected_env = {
+        "GEMINI_API_KEY": "env-key",
+        "SYS_VAR": "sys_val",
+        "MY_CUSTOM_VAR": "hello_env",
+    }
+    self.assertEqual(kwargs.get("env"), expected_env)
+
+    mock_proc.stdin.write.assert_called_once()
+    written_bytes = mock_proc.stdin.write.call_args[0][0]
+    parsed_config = localharness_pb2.InputConfig()
+    parsed_config.ParseFromString(written_bytes[4:])
+    self.assertEqual(dict(parsed_config.env), custom_env)
+
+  @mock.patch.dict(
+      "os.environ",
+      {"GEMINI_API_KEY": "env-key"},
+      clear=True,
+  )
+  @mock.patch("subprocess.Popen")
+  async def test_passes_non_string_env_coerced_to_strings(self, mock_popen):
+    """Verifies non-string env keys/values are coerced to strings for Popen and InputConfig."""
+    mock_proc = mock.MagicMock()
+    mock_proc.stdin = mock.MagicMock()
+    mock_proc.stdout = mock.MagicMock()
+    mock_proc.stderr = mock.MagicMock()
+    mock_proc.stdout.read.return_value = b""
+    mock_popen.return_value = mock_proc
+
+    custom_env = {"INT_KEY": 123, 1: "val", "BOOL_KEY": True}
+    strategy = self._make_strategy(env=custom_env)
+
+    with self.assertRaises(RuntimeError):
+      async with strategy:
+        pass
+
+    mock_popen.assert_called_once()
+    _, kwargs = mock_popen.call_args
+    expected_env = {
+        "GEMINI_API_KEY": "env-key",
+        "INT_KEY": "123",
+        "1": "val",
+        "BOOL_KEY": "True",
+    }
+    self.assertEqual(kwargs.get("env"), expected_env)
+
+    mock_proc.stdin.write.assert_called_once()
+    written_bytes = mock_proc.stdin.write.call_args[0][0]
+    parsed_config = localharness_pb2.InputConfig()
+    parsed_config.ParseFromString(written_bytes[4:])
+    self.assertEqual(
+        dict(parsed_config.env),
+        {"INT_KEY": "123", "1": "val", "BOOL_KEY": "True"},
+    )
+
+  def test_config_env_defaults_to_none(self):
+    """Verifies that LocalAgentConfig.env is None by default."""
+    config = local_connection_config.LocalAgentConfig()
+    self.assertIsNone(config.env)
+
   @mock.patch.dict("os.environ", {}, clear=True)
   @mock.patch("subprocess.Popen")
   async def test_accepts_models_api_key(self, mock_popen):
@@ -3197,6 +3280,22 @@ class LocalAgentConfigTest(absltest.TestCase):
     ]
     self.assertLen(text_models, 1)
     self.assertEqual(text_models[0].name, "gemini-2.5-pro")
+
+  def test_create_strategy_passes_env(self):
+    config = local_connection_config.LocalAgentConfig(
+        env={"CUSTOM_KEY": "CUSTOM_VAL"},
+    )
+    mock_tool_runner = mock.create_autospec(
+        tool_runner.ToolRunner, instance=True
+    )
+    mock_hook_runner = mock.create_autospec(
+        hook_runner.HookRunner, instance=True
+    )
+    strategy = config.create_strategy(
+        tool_runner=mock_tool_runner,
+        hook_runner=mock_hook_runner,
+    )
+    self.assertEqual(strategy._env, {"CUSTOM_KEY": "CUSTOM_VAL"})
 
   def test_merge_models_only_defaults(self):
     config = local_connection_config.LocalAgentConfig()

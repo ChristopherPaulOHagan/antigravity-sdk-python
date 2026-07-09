@@ -113,4 +113,5 @@ class LocalOpenAIAgentConfig(BaseLocalAgentConfig):
         skills_paths=self.skills_paths,
         mcp_servers=self.mcp_servers,
         subagents=self.subagents,
+        env=self.env,
     )

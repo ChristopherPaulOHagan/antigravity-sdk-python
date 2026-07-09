@@ -97,6 +97,13 @@ class BaseLocalAgentConfig(connection.AgentConfig):
   policies: list[policy.Policy] = pydantic.Field(
       default_factory=policy.confirm_run_command
   )
+  env: dict[str, str] | None = pydantic.Field(
+      default=None,
+      description=(
+          "Optional custom environment variables for the localharness"
+          " subprocess."
+      ),
+  )
   workspaces: list[str] = pydantic.Field(default_factory=lambda: [os.getcwd()])
 
   @pydantic.field_validator("app_data_dir")
@@ -171,6 +178,7 @@ class LocalAgentConfig(BaseLocalAgentConfig):
       mcp_servers: list[types.McpServerConfig] | None = None,
       subagents: list[types.SubagentConfig] | None = None,
       workspaces: list[str] | None = None,
+      env: dict[str, str] | None = None,
       conversation_id: str | None = None,
       save_dir: str | None = None,
       app_data_dir: str | None = None,
@@ -299,5 +307,6 @@ class LocalAgentConfig(BaseLocalAgentConfig):
         app_data_dir=self.app_data_dir,
         skills_paths=self.skills_paths,
         mcp_servers=self.mcp_servers,
+        env=self.env,
         subagents=self.subagents,
     )

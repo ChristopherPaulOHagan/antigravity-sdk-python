@@ -173,11 +173,13 @@ class LocalConnection(connection.Connection):
       tool_runner: t_runner.ToolRunner | None = None,
       hook_runner: h_runner.HookRunner | None = None,
       initial_history: Sequence[types.Step] | None = None,
+      env: dict[str, str] | None = None,
   ):
     self._hook_runner = hook_runner
     self._process = process
     self._ws = ws
     self._tool_runner = tool_runner
+    self._env = env
     self.__initial_history = initial_history or []
     self._client_cancelled = False
     self._is_receiving = False
@@ -623,6 +625,7 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
       workspaces: list[str] | None = None,
       app_data_dir: str | None = None,
       mcp_servers: Sequence[types.McpServerConfig] | None = None,
+      env: dict[str, str] | None = None,
       subagents: list[types.SubagentConfig] | None = None,
   ):
     """Initializes the instance.
@@ -639,6 +642,7 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
       workspaces: Optional list of workspace paths.
       app_data_dir: Optional directory for harness app data.
       mcp_servers: Optional sequence of MCP server configurations.
+      env: Optional dictionary of custom environment variables.
       subagents: Optional list of static subagent configurations.
     """
     self._binary_path = _get_default_binary_path()
@@ -648,6 +652,7 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
     self._mcp_servers = mcp_servers or []
     self._models: list[types.ModelTarget] = models or []
     self._skills_paths = skills_paths
+    self._env = env
 
     # Normalize str shorthand to SystemInstructions model.
     self._system_instructions: types.SystemInstructions | None = None
@@ -974,16 +979,23 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
         version=sdk_version,
         language_version=platform.python_version(),
     )
+    env_map = (
+        {str(k): str(v) for k, v in self._env.items()} if self._env else {}
+    )
     input_config = localharness_pb2.InputConfig(
         storage_directory=self._save_dir or "",
         client_info=client_info_proto,
+        env=env_map,
     )
+
+    merged_env = {**os.environ, **env_map} if self._env is not None else None
 
     process = subprocess.Popen(
         [self._binary_path],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        env=merged_env,
     )
 
     serialized = input_config.SerializeToString()
@@ -1058,6 +1070,7 @@ class LocalConnectionStrategy(connection.ConnectionStrategy):
         tool_runner=self._tool_runner,
         hook_runner=self._hook_runner,
         initial_history=initial_history,
+        env=self._env,
     )
     self._connection._start_stderr_reader(process.stderr)
 

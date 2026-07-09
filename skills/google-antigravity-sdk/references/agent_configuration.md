@@ -134,3 +134,17 @@ config = LocalAgentConfig(
 ```
 
 For more details, see [mcp_integration.md](mcp_integration.md).
+
+### Custom Environment Variables (Subprocess & Shell Isolation)
+
+You can pass a custom dictionary of environment variables using `env` in `LocalAgentConfig`. These variables override any variables with the same name in the parent process's environment when launching `localharness` and are inherited by shell tool execution (`run_command`):
+
+```python
+from google.antigravity import Agent, LocalAgentConfig
+import os
+
+config = LocalAgentConfig(
+    env={"PATH": "/custom/bin:" + os.environ.get("PATH", ""), "MY_CUSTOM_VAR": "foo"},
+)
+```
+
