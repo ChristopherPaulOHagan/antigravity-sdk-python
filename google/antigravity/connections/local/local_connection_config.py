@@ -115,14 +115,18 @@ class BaseLocalAgentConfig(connection.AgentConfig):
   @pydantic.model_validator(mode="after")
   def _apply_workspace_policies(self) -> "BaseLocalAgentConfig":
     """Prepends workspace-scoping policies when workspaces are configured."""
+    other_policies = [
+        p for p in self.policies if getattr(p, "name", "") != "workspace_only"
+    ]
     if self.workspaces:
       app_data_path = self.app_data_dir or DEFAULT_APP_DATA_DIR
       resolved_app_data_dir = pathlib.Path(app_data_path).expanduser().resolve()
       allowed_paths = [*self.workspaces, str(resolved_app_data_dir)]
-
       self.__dict__["policies"] = (
-          policy.workspace_only(allowed_paths) + self.policies
+          policy.workspace_only(allowed_paths) + other_policies
       )
+    else:
+      self.__dict__["policies"] = other_policies
     return self
 
   def _get_system_instructions(self) -> types.SystemInstructions | None:

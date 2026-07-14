@@ -3758,6 +3758,102 @@ class LocalAgentConfigWorkspaceTest(
         msg="Workspace policy must resolve symlinks and block traversal",
     )
 
+  async def test_workspace_policy_mutation_and_copy(self):
+    """Tests that workspace policy updates on reassignment and model_copy."""
+    temp_dir_path = pathlib.Path(self.create_tempdir().full_path)
+    workspace_a = temp_dir_path / "ws_a"
+    workspace_b = temp_dir_path / "ws_b"
+    app_1 = temp_dir_path / "app1"
+
+    workspace_a.mkdir(exist_ok=True)
+    workspace_b.mkdir(exist_ok=True)
+
+    config = local_connection_config.LocalAgentConfig(
+        system_instructions="test",
+        workspaces=[str(workspace_a)],
+        app_data_dir=str(app_1),
+    )
+
+    # 1. Initial State
+    self.assertLen(config.policies, 5)
+    self.assertEqual(config.policies[0].name, "workspace_only")
+
+    # Evaluate policy to prove it allows ws_a, denies ws_b
+    hook_a = policy.enforce(config.policies[:3])
+    ctx = hooks_base.HookContext()
+
+    res_a = await hook_a.run(
+        ctx,
+        types.ToolCall(
+            name="view_file",
+            args={"path": str(workspace_a / "f.txt")},
+            canonical_path=str(workspace_a / "f.txt"),
+        ),
+    )
+    self.assertTrue(res_a.allow)
+
+    res_b = await hook_a.run(
+        ctx,
+        types.ToolCall(
+            name="view_file",
+            args={"path": str(workspace_b / "f.txt")},
+            canonical_path=str(workspace_b / "f.txt"),
+        ),
+    )
+    self.assertFalse(res_b.allow)
+
+    # 2. Mutate workspaces
+    config.workspaces = [str(workspace_b)]
+    self.assertLen(config.policies, 5)
+    self.assertEqual(config.policies[0].name, "workspace_only")
+
+    # Evaluate updated policy to prove it allows ws_b, denies ws_a
+    hook_b = policy.enforce(config.policies[:3])
+
+    res_a2 = await hook_b.run(
+        ctx,
+        types.ToolCall(
+            name="view_file",
+            args={"path": str(workspace_a / "f.txt")},
+            canonical_path=str(workspace_a / "f.txt"),
+        ),
+    )
+    self.assertFalse(res_a2.allow)
+
+    res_b2 = await hook_b.run(
+        ctx,
+        types.ToolCall(
+            name="view_file",
+            args={"path": str(workspace_b / "f.txt")},
+            canonical_path=str(workspace_b / "f.txt"),
+        ),
+    )
+    self.assertTrue(res_b2.allow)
+
+    # 3. Model Copy Deep
+    config_copy = config.model_copy(deep=True)
+    self.assertLen(config_copy.policies, 5)
+    self.assertEqual(config_copy.policies[0].name, "workspace_only")
+    self.assertEqual(config_copy.policies[1].name, "workspace_only")
+    self.assertEqual(config_copy.policies[2].name, "workspace_only")
+    self.assertEqual(config_copy.policies[3].tool, "run_command")
+
+    hook_copy = policy.enforce(config_copy.policies[:3])
+    res_b_copy = await hook_copy.run(
+        ctx,
+        types.ToolCall(
+            name="view_file",
+            args={"path": str(workspace_b / "f.txt")},
+            canonical_path=str(workspace_b / "f.txt"),
+        ),
+    )
+    self.assertTrue(res_b_copy.allow)
+
+    # 4. Clear workspaces
+    config.workspaces = []
+    self.assertLen(config.policies, 2)
+    self.assertEqual(config.policies[0].tool, "run_command")
+
 
 class LocalConnectionBuiltinToolHooksTest(unittest.IsolatedAsyncioTestCase):
   """Tests for built-in tool STATE_DONE/STATE_ERROR cleanup.
