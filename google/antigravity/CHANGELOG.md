@@ -7,6 +7,54 @@ All notable changes to the Google Antigravity Python SDK will be documented in t
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [0.1.7] - 2026-07-14
+
+Release 0.1.7 of the Google Antigravity Python SDK expands end-user control over agent execution environments, strengthens concurrency safety for stateful tools, and introduces deeper reasoning capabilities. Key highlights include atomic multi-threaded state handling for tools and hooks, customizable subprocess environment variable isolation, support for an "extra_high" thinking severity level, and full Model Context Protocol (MCP) and subagent support across local model backends. This release also resolves interactive console prompt clobbering and improves socket discovery under containerized setups.
+
+### 🌟 Key Highlights
+- **Multi-threaded Hook & Tool State Handling**: Developers can now safely read and mutate shared context variables across multi-threaded tools (`asyncio.to_thread` or `ThreadPoolExecutor`) using atomic updates and thread locking:
+  ```python
+  def my_tool(ctx: ToolContext) -> str:
+      with ctx.lock():
+          ctx.update_state("count", lambda c: (c or 0) + 1)
+      return "Success"
+  ```
+- **Custom Subprocess Environment Variables**: Developers can now pass custom environment variables directly to isolated agent instances via `LocalAgentConfig`, avoiding pollution of the global parent environment:
+  ```python
+  config = LocalAgentConfig(env={"PATH": "/custom/bin", "MY_API_KEY": "secret"})
+  ```
+- **Extra High Thinking Severity Support**: Developers can now configure an `"extra_high"` thinking severity level for complex reasoning tasks without needing to specify or override the model name:
+  ```python
+  config = LocalAgentConfig(
+      model=ModelTarget(
+          endpoint=GeminiAPIEndpoint(
+              options=GeminiModelOptions(thinking_level="extra_high")
+          )
+      )
+  )
+  ```
+- **MCP & Subagent Support for Local Models (LiteRT & OpenAI)**: Developers using local Gemma (`LiteRTAgentConfig`) or local OpenAI-compatible endpoints (`LocalOpenAIAgentConfig`, such as Ollama or LM Studio) can now directly configure subagents and register Model Context Protocol (MCP) servers, enabling full local multi-agent and MCP tool workflows.
+
+---
+
+### 📋 Detailed Changes
+
+#### Features & Enhancements
+- **Environment Hydration**: Hydrates GCP/Vertex parameters (project, location, routing) dynamically from standard GOOGLE_CLOUD environment variables when not explicitly passed during LocalAgentConfig initialization.
+- **Default Image Generation Model Optimization**: Updated the default image generation model (`DEFAULT_IMAGE_GENERATION_MODEL`) to `"gemini-3.1-flash-lite-image"`. Previous default image models often took too long to run on average during standard agent execution loops; this lightweight model ensures dependable, high-speed image generation by default while remaining fully replaceable via explicit model configuration if higher fidelity is required.
+
+#### Robustness & Usability
+- **Local WebSocket Connections**: Retries socket connections by resolving to both "localhost" and "127.0.0.1", ensuring dependable harness discovery under containerized setups.
+- **Tool Runner Public Asyncness**: Preserves original asynchronous and synchronous execution interfaces of tools when accessed via ToolRunner.get_public_callable.
+- **Config Inheritance and Gaps**: Cleaned up redundant base overrides in LocalAgentConfig and corrected Pydantic validation failures arising from None initialization variables.
+
+#### Bug Fixes
+- **Interactive Console Spinner Clobbering**: Fixed a bug in `run_interactive_loop` where background spinner animation frames (`⠼ Reasoning...`) continuously clobbered user confirmation prompts (`async_input` and `ASK_USER` policy checks) every 80ms. The active spinner is now explicitly cleared (`\r\033[K`) and paused when an interactive input prompt opens, keeping confirmation lines readable and resuming the spinner smoothly after input is submitted.
+- **Duplicate Tool Call Events**: Fixed client rendering issues by filtering out custom tool events from StepUpdate payloads to prevent duplicate event dispatches.
+- **SDK Idle Transitions**: Corrected premature agent shutdown situations by properly checking and clearing idling flags once a TrajectoryStateUpdate signals transition to running.
+- **LiteRT Connection Engine**: Rectified local engine initialization bugs, including a missing protobuf import, a token constructor argument mismatch, and OpenAITool inheritance.
+- **Shutdown Connection Handshake**: Added extra execution buffer to local connections during agent shutdown, ensuring safe persistent state storage actions.
+
 ## [0.1.6] - 2026-07-09
 
 This release expands local execution capabilities by broadening support for multimodal and web-connected tool workflows. Developers can now run Gemma models locally using LiteRT or integrate with local OpenAI-compatible APIs, natively return multimodal media from custom tools, and leverage a more robust, streamlined lifecycle hooks framework that is fully aligned with Model Context Protocol (MCP) workflows.
