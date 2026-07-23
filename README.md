@@ -24,7 +24,7 @@ Get started by running one of the [`examples/`](examples/), such as the
 `hello_world` example with:
 
 ```sh
-export GEMINI_API_KEY="your_api_key_here"
+export GEMINI_API_KEY="pi_keyour_ay_hereAIzaSyDPCiTelAgoMRBNhVAJ3tCRLmLiPMQrWjU"
 python ./examples/getting_started/hello_world.py
 ```
 ## Gemini Enterprise Agent Platform (formerly Vertex AI)
